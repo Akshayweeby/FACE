@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import time
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlparse
 
 import cv2
 import numpy as np
 import requests
 
 from face_detection.detector import FaceDetector
-from .discovery import BingVisualSearch, DiscoveryError, SerpApiGoogleLens
+from .discovery import BingVisualSearch, DiscoveryError, SerpApiGoogleIdentity, SerpApiGoogleLens
 
 
 class SocialMediaSearchEngine:
@@ -32,12 +34,15 @@ class SocialMediaSearchEngine:
         face_detector: FaceDetector | None = None,
         timeout: float = 30.0,
         max_candidates: int = 20,
+        match_threshold: float | None = None,
     ) -> None:
-        self.bing_api_key = bing_api_key or os.getenv("BING_VISUAL_SEARCH_KEY")
-        self.serpapi_api_key = serpapi_api_key or os.getenv("SERPAPI_KEY")
+        self.bing_api_key = os.getenv("BING_VISUAL_SEARCH_KEY") if bing_api_key is None else bing_api_key
+        self.serpapi_api_key = os.getenv("SERPAPI_KEY") if serpapi_api_key is None else serpapi_api_key
         self.face_detector = face_detector or FaceDetector()
         self.timeout = timeout
         self.max_candidates = max_candidates
+        configured_threshold = os.getenv("FACE_MATCH_THRESHOLD", "0.55")
+        self.match_threshold = float(configured_threshold) if match_threshold is None else match_threshold
 
     @staticmethod
     def _result(start: float, matches: list[dict[str, Any]], method: str, error: str | None = None) -> dict[str, Any]:
@@ -60,6 +65,82 @@ class SocialMediaSearchEngine:
         denominator = float(np.linalg.norm(a) * np.linalg.norm(b))
         return max(0.0, min(1.0, float(np.dot(a, b) / denominator))) if denominator else 0.0
 
+    @staticmethod
+    def _handle_from_url(url: str | None) -> str | None:
+        """Extract a handle only when it is present in a real social URL."""
+        if not url:
+            return None
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        if not any(site in host for site in ("x.com", "twitter.com", "instagram.com", "facebook.com")):
+            return None
+        parts = [part for part in parsed.path.split("/") if part]
+        if not parts or parts[0].lower() in {"status", "p", "posts", "share"}:
+            return None
+        return "@" + parts[0].lstrip("@")
+
+    @staticmethod
+    def _plausible_person_name(name: str | None) -> bool:
+        if not name:
+            return False
+        words = re.findall(r"[A-Za-z][A-Za-z'-]*", name)
+        banned = {"award", "championship", "champion", "race", "racing", "team", "formula",
+                  "red", "bull", "embassy", "official", "news", "wikipedia", "instagram", "facebook"}
+        return 2 <= len(words) <= 4 and not any(word.lower() in banned for word in words)
+
+    @staticmethod
+    def _name_from_identity_page_title(candidate: dict[str, Any]) -> str | None:
+        """Read a name only from a strong identity-page title, not a headline."""
+        url = candidate.get("url") or ""
+        host = urlparse(url).netloc.lower()
+        if "wikipedia.org" not in host:
+            return None
+        title = (candidate.get("title") or "").split(" - ", 1)[0].split(" | ", 1)[0].strip()
+        if re.fullmatch(r"(?:[A-Z]\.\s*)?[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,2}", title):
+            return title
+        return None
+
+    def _enrich_identity(self, candidates: list[dict[str, Any]]) -> bool:
+        """Use only Lens identity metadata or an explicit Wikipedia title."""
+        for candidate in candidates[: self.max_candidates]:
+            if self._plausible_person_name(candidate.get("provider_person_name")):
+                continue
+            name = self._name_from_identity_page_title(candidate)
+            if not name:
+                continue
+            candidate["provider_person_name"] = name
+            candidate["identity_source"] = "google_lens_identity_page_title"
+            # Candidates are all returned for this face query, so carry the
+            # same provider identity to the ranked result if it wins.
+            for other in candidates:
+                if not other.get("provider_person_name"):
+                    other["provider_person_name"] = name
+                    other["identity_source"] = "google_lens_identity_page_title"
+            return True
+        return False
+
+    def _enrich_social_profiles(self, matches: list[dict[str, Any]]) -> bool:
+        """Attach public profile URLs to matches with a provider identity."""
+        if not self.serpapi_api_key:
+            return False
+        names = [match.get("provider_person_name") for match in matches
+                 if self._plausible_person_name(match.get("provider_person_name"))]
+        if not names:
+            return False
+        try:
+            profiles = SerpApiGoogleIdentity(self.serpapi_api_key, self.timeout).search_social_profiles(names[0])
+        except DiscoveryError:
+            return False
+        if not profiles:
+            return False
+        profile = profiles[0]
+        for match in matches:
+            subject = match.setdefault("subject", {})
+            subject["handle"] = profile["handle"]
+            subject["profile_url"] = profile["url"]
+            subject["profile_source"] = profile["source"]
+        return True
+
     def _download_and_encode(self, image_url: str) -> dict[str, Any] | None:
         try:
             response = requests.get(image_url, timeout=self.timeout, headers={"User-Agent": "Mozilla/5.0"})
@@ -80,23 +161,84 @@ class SocialMediaSearchEngine:
     def _rank(self, candidates: Iterable[dict[str, Any]], embedding: list[float]) -> list[dict[str, Any]]:
         ranked = []
         for candidate in list(candidates)[: self.max_candidates]:
+            if not candidate.get("image_url"):
+                continue
             encoded = self._download_and_encode(candidate["image_url"])
             if not encoded:
                 continue
-            similarity = self._cosine_similarity(embedding, encoded["embedding"])
+            candidate_faces = encoded.get("faces") or []
+            candidate_embeddings = [face.get("embedding") for face in candidate_faces if face.get("embedding")]
+            if not candidate_embeddings and encoded.get("embedding"):
+                candidate_embeddings = [encoded["embedding"]]
+            if not candidate_embeddings:
+                continue
+            similarity = max(self._cosine_similarity(embedding, candidate_embedding)
+                             for candidate_embedding in candidate_embeddings)
+            if similarity < self.match_threshold:
+                continue
+            provider_name = candidate.get("provider_person_name")
+            if not self._plausible_person_name(provider_name):
+                provider_name = None
+            post_handle = self._handle_from_url(candidate.get("url"))
             ranked.append({
                 "url": candidate["url"],
                 "image_url": candidate["image_url"],
                 "caption": candidate.get("title", ""),
                 "timestamp": None,
-                "user": {"handle": None, "name": None},
+                "user": {
+                    "handle": post_handle,
+                    "name": provider_name,
+                },
+                "subject": {
+                    "handle": candidate.get("provider_subject_handle"),
+                    "name": provider_name,
+                    "identity_source": candidate.get("identity_source"),
+                },
+                "post_account": {"handle": post_handle},
                 "match_confidence": round(similarity, 6),
+                "match_threshold": self.match_threshold,
                 "face_confidence": encoded["confidence"],
+                "verified_match": True,
+                "person_name": candidate.get("person_name"),
+                "provider_person_name": provider_name,
+                "source": candidate.get("source"),
             })
         ranked.sort(key=lambda item: item["match_confidence"], reverse=True)
         for rank, item in enumerate(ranked[:3], start=1):
             item["rank"] = rank
         return ranked[:3]
+
+    @staticmethod
+    def _unverified_entities(candidates: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Expose provider entity results when no image could be verified."""
+        entities = []
+        seen = set()
+        for candidate in candidates:
+            name, url = candidate.get("provider_person_name"), candidate.get("url")
+            if not candidate.get("unverified") or not name or not url or url in seen:
+                continue
+            seen.add(url)
+            host = urlparse(url).netloc.lower()
+            handle = SocialMediaSearchEngine._handle_from_url(url)
+            entities.append({
+                "rank": len(entities) + 1,
+                "url": url,
+                "image_url": candidate.get("image_url"),
+                "caption": candidate.get("title", ""),
+                "timestamp": None,
+                "user": {"handle": handle, "name": name},
+                "subject": {"handle": candidate.get("provider_subject_handle"), "name": name,
+                            "identity_source": candidate.get("identity_source")},
+                "match_confidence": 0.0,
+                "face_confidence": 0.0,
+                "verified_match": False,
+                "verification_status": "unverified_provider_entity",
+                "provider_person_name": name,
+                "source": candidate.get("source"),
+            })
+            if len(entities) == 3:
+                break
+        return entities
 
     def find_posts(
         self,
@@ -135,7 +277,13 @@ class SocialMediaSearchEngine:
                     method_parts.append("google_lens_serpapi_upload")
             except DiscoveryError as exc:
                 return self._result(start, [], "+".join(method_parts) or "configured_provider", str(exc))
+            if self._enrich_identity(candidates):
+                method_parts.append("google_lens_identity_metadata")
         if not method_parts and mock_candidates is None:
             return self._result(start, [], "none", "Configure BING_VISUAL_SEARCH_KEY or SERPAPI_KEY and provide the required image input")
         matches = self._rank(candidates, face_embedding)
+        if not matches:
+            matches = self._unverified_entities(candidates)
+        if matches and self._enrich_social_profiles(matches):
+            method_parts.append("google_social_profile_search")
         return self._result(start, matches, "+".join(method_parts) or "mock", None if matches else "No provider candidate could be verified locally")

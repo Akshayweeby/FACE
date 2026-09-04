@@ -145,13 +145,18 @@ class FaceDetector:
             detected_faces, key=lambda item: item[0]["width"] * item[0]["height"]
         )
         try:
-            aligned = self._recognizer.alignCrop(image, face_row)
-            feature = self._recognizer.feature(aligned)
-            embedding = feature.reshape(-1).astype("float32")
-            norm = float((embedding @ embedding) ** 0.5)
-            if norm == 0:
-                raise ValueError("model returned a zero embedding")
-            embedding = (embedding / norm).tolist()
+            def encode(row):
+                aligned = self._recognizer.alignCrop(image, row)
+                feature = self._recognizer.feature(aligned)
+                vector = feature.reshape(-1).astype("float32")
+                norm = float((vector @ vector) ** 0.5)
+                if norm == 0:
+                    raise ValueError("model returned a zero embedding")
+                return [round(float(value), 8) for value in (vector / norm).tolist()]
+
+            for face, row in detected_faces:
+                face["embedding"] = encode(row)
+            embedding = selected["embedding"]
         except Exception as exc:
             return self._error(start, f"Embedding extraction failed: {exc}", "embedding_error")
 
@@ -162,7 +167,7 @@ class FaceDetector:
         return {
             "success": True,
             "faces_detected": len(detected_faces),
-            "embedding": [round(float(value), 8) for value in embedding],
+            "embedding": embedding,
             "embedding_dimension": len(embedding),
             "confidence": confidence,
             "bounding_box": {key: selected[key] for key in ("x", "y", "width", "height")},

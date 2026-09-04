@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 
-from social_search.discovery import BingVisualSearch, SerpApiGoogleLens
+from social_search.discovery import BingVisualSearch, SerpApiGoogleIdentity, SerpApiGoogleLens
 from social_search.search_engine import SocialMediaSearchEngine
 
 
@@ -26,8 +26,68 @@ def test_lens_parser_ignores_incomplete_results():
     assert len(result) == 1
 
 
+def test_lens_parser_keeps_knowledge_graph_entity():
+    result = SerpApiGoogleLens._parse({"knowledge_graph": {
+        "title": "Example Person", "link": "https://example.test/person"
+    }})
+    assert result[0]["provider_person_name"] == "Example Person"
+    assert result[0]["unverified"] is True
+
+
+def test_google_identity_parser_reads_knowledge_graph():
+    result = SerpApiGoogleIdentity._parse({"knowledge_graph": {"title": "Example Person", "link": "https://example.test"}}, "@example")
+    assert result["name"] == "Example Person"
+
+
+def test_google_identity_parser_reads_profile_title():
+    result = SerpApiGoogleIdentity._parse({"organic_results": [{
+        "title": "Example Person (@example) / X", "link": "https://x.com/example"
+    }]}, "@example")
+    assert result["name"] == "Example Person"
+
+
+def test_google_identity_parser_reads_provider_title():
+    result = SerpApiGoogleIdentity._parse_text({"organic_results": [{
+        "title": "Birthday wishes for the Prime Minister Shri Narendra Modi",
+        "snippet": "Best wishes to Prime Minister Shri Narendra Modi ji.",
+        "link": "https://example.test/post",
+    }]})
+    assert result["name"] == "Narendra Modi"
+
+
+def test_social_profile_parser_returns_profiles_not_posts():
+    result = SerpApiGoogleIdentity._parse_social_profiles({"organic_results": [
+        {"title": "Max Verstappen (@max33verstappen) • Instagram", "link": "https://www.instagram.com/max33verstappen/"},
+        {"title": "A post", "link": "https://x.com/max33verstappen/status/123"},
+    ]})
+    assert result == [{
+        "url": "https://www.instagram.com/max33verstappen",
+        "handle": "@max33verstappen",
+        "title": "Max Verstappen (@max33verstappen) • Instagram",
+        "snippet": "",
+        "source": "google_social_profile_search",
+    }]
+
+
+def test_social_url_provides_handle_and_provider_name(monkeypatch):
+    engine = SocialMediaSearchEngine(face_detector=FakeDetector(), bing_api_key="key", serpapi_api_key="")
+    monkeypatch.setattr(engine, "_download_and_encode", lambda url: {
+        "success": True, "embedding": [1.0, 0.0], "confidence": 0.8
+    })
+    result = engine.find_posts(
+        image_path="input.jpg", face_embedding=[1.0, 0.0],
+        mock_candidates=[{
+            "url": "https://x.com/example_user/status/123",
+            "image_url": "https://example.test/image.jpg",
+            "title": "A provider result",
+            "provider_person_name": "Example Person",
+        }],
+    )
+    assert result["matches"][0]["user"] == {"handle": "@example_user", "name": "Example Person"}
+
+
 def test_real_provider_candidates_are_ranked_and_limited(monkeypatch):
-    engine = SocialMediaSearchEngine(face_detector=FakeDetector(), bing_api_key="key", max_candidates=5)
+    engine = SocialMediaSearchEngine(face_detector=FakeDetector(), bing_api_key="key", serpapi_api_key="", max_candidates=5)
     candidates = [
         {"url": "https://example.test/second", "image_url": "https://example.test/2.jpg", "title": "second"},
         {"url": "https://example.test/first", "image_url": "https://example.test/1.jpg", "title": "first"},
@@ -42,8 +102,25 @@ def test_real_provider_candidates_are_ranked_and_limited(monkeypatch):
     assert result["matches"][0]["match_confidence"] == 1.0
 
 
+def test_low_similarity_candidate_is_not_verified(monkeypatch):
+    engine = SocialMediaSearchEngine(
+        face_detector=FakeDetector(), bing_api_key="key", serpapi_api_key="", match_threshold=0.8
+    )
+    monkeypatch.setattr(engine, "_download_and_encode", lambda url: {
+        "success": True, "embedding": [0.0, 1.0], "confidence": 0.8
+    })
+    result = engine.find_posts(
+        image_path="input.jpg", face_embedding=[1.0, 0.0],
+        mock_candidates=[{
+            "url": "https://example.test/wrong", "image_url": "https://example.test/wrong.jpg",
+            "title": "Unrelated face",
+        }],
+    )
+    assert result["matches"] == []
+
+
 def test_no_credentials_is_graceful():
-    result = SocialMediaSearchEngine(face_detector=FakeDetector(), bing_api_key=None, serpapi_api_key=None).find_posts(
+    result = SocialMediaSearchEngine(face_detector=FakeDetector(), bing_api_key="", serpapi_api_key="").find_posts(
         face_embedding=[1.0, 0.0]
     )
     assert result["success"] is False

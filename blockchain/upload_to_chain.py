@@ -29,8 +29,8 @@ class BlockchainUploader:
 
     def upload_post(self, post_data: dict[str, Any]) -> dict[str, Any]:
         digest = post_hash(post_data)
-        account = self.w3.eth.account.from_key(self.private_key)
         try:
+            account = self.w3.eth.account.from_key(self.private_key)
             nonce = self.w3.eth.get_transaction_count(account.address)
             tx = self.contract.functions.uploadPost(
                 digest, str(post_data.get("url", "")), int(post_data.get("timestamp", 0) or 0)

@@ -25,7 +25,10 @@ class BlockchainVerifier:
 
     def retrieve_post(self, post_id: int) -> dict[str, Any]:
         record = self.contract.functions.getPost(post_id).call()
-        return {"id": int(record[0]), "post_hash": record[1], "post_url": record[2],
+        stored_hash = record[1].hex() if hasattr(record[1], "hex") else str(record[1])
+        if not stored_hash.startswith("0x"):
+            stored_hash = "0x" + stored_hash
+        return {"id": int(record[0]), "post_hash": stored_hash, "post_url": record[2],
                 "original_timestamp": int(record[3]), "uploader": record[4],
                 "uploaded_at": int(record[5]), "verified": bool(record[6])}
 

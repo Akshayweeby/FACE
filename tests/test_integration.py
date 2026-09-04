@@ -4,7 +4,9 @@ from main import run_pipeline
 class FakeDetector:
     def detect_and_encode(self, image_path):
         assert image_path == "input.jpg"
-        return {"success": True, "embedding": [0.1, 0.2], "confidence": 0.95}
+        return {"success": True, "embedding": [0.1, 0.2], "confidence": 0.95,
+                "bounding_box": {"x": 1, "y": 2, "width": 10, "height": 10},
+                "faces": [{"x": 1, "y": 2, "width": 10, "height": 10, "embedding": [0.1, 0.2]}]}
 
 
 class FakeSearch:
