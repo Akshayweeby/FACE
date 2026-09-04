@@ -128,8 +128,11 @@ class SocialMediaSearchEngine:
                     candidates.extend(BingVisualSearch(self.bing_api_key, self.timeout).search(str(image_path)))
                     method_parts.append("bing_visual_search")
                 if image_url and self.serpapi_api_key:
-                    candidates.extend(SerpApiGoogleLens(self.serpapi_api_key, self.timeout).search(image_url))
+                    candidates.extend(SerpApiGoogleLens(self.serpapi_api_key, self.timeout).search(image_url=image_url))
                     method_parts.append("google_lens_serpapi")
+                elif image_path and self.serpapi_api_key:
+                    candidates.extend(SerpApiGoogleLens(self.serpapi_api_key, self.timeout).search(image_path=str(image_path)))
+                    method_parts.append("google_lens_serpapi_upload")
             except DiscoveryError as exc:
                 return self._result(start, [], "+".join(method_parts) or "configured_provider", str(exc))
         if not method_parts and mock_candidates is None:

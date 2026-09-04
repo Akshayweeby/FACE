@@ -11,12 +11,12 @@ if result["success"]:
 
 ## How it works
 
-1. The original image is sent to Bing Visual Search, or a publicly reachable image URL is sent to Google Lens through SerpApi.
+1. The original image is sent to Bing Visual Search, or uploaded to SerpApi's Image API and passed to Google Lens using its temporary `image_id`. A publicly reachable URL is also supported.
 2. Only URLs and image URLs returned by that provider are used; no result is hardcoded.
 3. Candidate images are downloaded and passed through the Stage 1 face encoder.
 4. Cosine similarity between the input embedding and candidate embedding is used to rank up to three verified matches.
 
-An embedding alone cannot be sent to an image-search service. Use `image_path` with Bing or `image_url` with SerpApi; `face_embedding` is used for local comparison.
+An embedding alone cannot be sent to an image-search service. Use `image_path` with Bing or SerpApi (local uploads are supported; JPG/PNG/WebP must be at most 500 KB), or use `image_url` with SerpApi; `face_embedding` is used for local comparison. SerpApi image IDs expire after 10 minutes.
 
 ## Setup
 

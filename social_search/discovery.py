@@ -61,21 +61,40 @@ class BingVisualSearch:
 
 class SerpApiGoogleLens:
     endpoint = "https://serpapi.com/search.json"
+    image_endpoint = "https://serpapi.com/image"
 
     def __init__(self, api_key: str, timeout: float = 30.0):
         self.api_key = api_key
         self.timeout = timeout
 
-    def search(self, image_url: str) -> list[dict[str, Any]]:
+    def search(self, image_url: str | None = None, image_path: str | None = None) -> list[dict[str, Any]]:
+        if not image_url and not image_path:
+            raise DiscoveryError("Google Lens requires image_url or image_path")
         try:
+            params = {"engine": "google_lens", "api_key": self.api_key}
+            if image_url:
+                params["url"] = image_url
+            else:
+                with open(image_path, "rb") as image_file:
+                    upload = requests.post(
+                        self.image_endpoint,
+                        data={"api_key": self.api_key},
+                        files={"image": ("image", image_file, "application/octet-stream")},
+                        timeout=self.timeout,
+                    )
+                upload.raise_for_status()
+                upload_payload = upload.json()
+                if not upload_payload.get("image_id"):
+                    raise DiscoveryError(upload_payload.get("error", "SerpApi image upload returned no image_id"))
+                params["image_id"] = upload_payload["image_id"]
             response = requests.get(
                 self.endpoint,
-                params={"engine": "google_lens", "url": image_url, "api_key": self.api_key},
+                params=params,
                 timeout=self.timeout,
             )
             response.raise_for_status()
             payload = response.json()
-        except (requests.RequestException, ValueError) as exc:
+        except (OSError, requests.RequestException, ValueError) as exc:
             raise DiscoveryError(f"Google Lens search failed: {exc}") from exc
         return self._parse(payload)
 

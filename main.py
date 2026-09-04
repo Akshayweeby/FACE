@@ -87,12 +87,37 @@ def run_pipeline(
 run_full_pipeline = run_pipeline
 
 
+def print_terminal_result(result: dict[str, Any]) -> None:
+    """Print the useful human-readable fields without hiding the JSON result."""
+    if result.get("face"):
+        face = result["face"]
+        print(f"Face detected: {face.get('faces_detected', 0)}")
+        print(f"Face confidence: {face.get('confidence', 0):.4f}")
+        print(f"Bounding box: {face.get('bounding_box')}")
+        print(f"Embedding dimension: {face.get('embedding_dimension')}")
+    if result.get("best_match"):
+        match = result["best_match"]
+        person_name = (match.get("user") or {}).get("name") or "Not provided by search provider"
+        print(f"Name: {person_name}")
+        print(f"Social/web post: {match.get('url')}")
+        print(f"Match confidence: {match.get('match_confidence', 0):.4f}")
+    if result.get("blockchain_verification"):
+        verification = result["blockchain_verification"]
+        print(f"Blockchain verified: {verification.get('verified', False)}")
+        print(f"Verification transaction: {verification.get('transaction_hash')}")
+    if not result.get("success"):
+        print(f"Pipeline stopped at {result.get('failed_stage')}: {result.get('error')}")
+    print("\nFull result JSON:")
+    import json
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
 if __name__ == "__main__":
     import argparse
     import json
 
     parser = argparse.ArgumentParser(description="Run the Goa face-to-blockchain pipeline")
-    parser.add_argument("image_path", help="Input JPG/PNG image")
+    parser.add_argument("image_path", nargs="?", default="Images/images.jpg", help="Input JPG/PNG image (default: Images/images.jpg)")
     parser.add_argument("--public-image-url", help="Public image URL for Google Lens")
     args = parser.parse_args()
-    print(json.dumps(run_pipeline(args.image_path, args.public_image_url), indent=2, ensure_ascii=False))
+    print_terminal_result(run_pipeline(args.image_path, args.public_image_url))
