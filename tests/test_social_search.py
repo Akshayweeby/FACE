@@ -55,6 +55,18 @@ def test_google_identity_parser_reads_provider_title():
     assert result["name"] == "Narendra Modi"
 
 
+def test_generic_job_title_is_not_a_person_name():
+    assert not SocialMediaSearchEngine._plausible_person_name("Prime Minister")
+    assert SocialMediaSearchEngine._plausible_person_name("Narendra Modi")
+
+
+def test_trusted_result_title_extracts_max_verstappen():
+    assert SocialMediaSearchEngine._name_from_identity_page_title({
+        "url": "https://www.redbull.com/us-en/max-verstappen-toughest-title-win",
+        "title": "Max Verstappen: How he won his toughest title defense",
+    }) == "Max Verstappen"
+
+
 def test_social_profile_parser_returns_profiles_not_posts():
     result = SerpApiGoogleIdentity._parse_social_profiles({"organic_results": [
         {"title": "Max Verstappen (@max33verstappen) • Instagram", "link": "https://www.instagram.com/max33verstappen/"},
@@ -117,6 +129,46 @@ def test_low_similarity_candidate_is_not_verified(monkeypatch):
         }],
     )
     assert result["matches"] == []
+
+
+def test_strong_match_stops_candidate_processing(monkeypatch):
+    engine = SocialMediaSearchEngine(
+        face_detector=FakeDetector(), bing_api_key="key", serpapi_api_key="",
+        early_match_threshold=0.9,
+    )
+    checked = []
+
+    def fake_encode(url):
+        checked.append(url)
+        return {"success": True, "embedding": [1.0, 0.0], "confidence": 0.8}
+
+    monkeypatch.setattr(engine, "_download_and_encode", fake_encode)
+    result = engine.find_posts(
+        image_path="input.jpg", face_embedding=[1.0, 0.0],
+        mock_candidates=[
+            {"url": "https://x.com/example/first", "image_url": "https://example.test/1.jpg", "title": "first"},
+            {"url": "https://example.test/second", "image_url": "https://example.test/2.jpg", "title": "second"},
+        ],
+    )
+    assert result["matches"][0]["match_confidence"] == 1.0
+    assert checked == ["https://example.test/1.jpg"]
+
+
+def test_social_post_is_preferred_over_stronger_generic_page(monkeypatch):
+    engine = SocialMediaSearchEngine(
+        face_detector=FakeDetector(), bing_api_key="key", serpapi_api_key="", early_match_threshold=0.99
+    )
+    monkeypatch.setattr(engine, "_download_and_encode", lambda url: {
+        "success": True, "embedding": [1.0, 0.0] if url.endswith("social.jpg") else [0.99, 0.1], "confidence": 0.8
+    })
+    result = engine.find_posts(
+        image_path="input.jpg", face_embedding=[1.0, 0.0],
+        mock_candidates=[
+            {"url": "https://example.test/page", "image_url": "https://example.test/page.jpg", "title": "page"},
+            {"url": "https://x.com/example/status/1", "image_url": "https://example.test/social.jpg", "title": "social"},
+        ],
+    )
+    assert result["matches"][0]["post_type"] == "social_post_or_profile"
 
 
 def test_no_credentials_is_graceful():

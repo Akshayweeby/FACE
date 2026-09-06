@@ -156,16 +156,38 @@ def print_terminal_result(result: dict[str, Any], verbose: bool = False) -> None
             print(f"  Subject profile: {person['social_media_profile']}")
         print(f"  Post account: {person.get('post_account', 'Not found')}")
         print(f"  Post: {person['post_url'] or 'Not found'}")
+        if person.get("best_match"):
+            print(f"  Retrieved source type: {person['best_match'].get('post_type', 'unknown')}")
         print(f"  Match confidence: {person['match_confidence']:.4f}")
         print(f"  Match status: {person.get('match_status', 'Not found')}")
         if person.get("search_method"):
             print(f"  Search method: {person['search_method']}")
+            live_search = person["search_method"] not in {"none", "mock", "face_detection"}
+            print(f"  Live provider search: {'YES' if live_search else 'NO'}")
+        if person.get("search", {}).get("posts_found") is not None:
+            print(f"  Provider candidates retrieved: {person['search']['posts_found']}")
         if person.get("search_error"):
             print(f"  Search status: {person['search_error']}")
         if person.get("blockchain_upload", {}).get("status") == "not_configured":
             print("  Blockchain: Not configured (add PRIVATE_KEY and CONTRACT_ADDRESS to .env)")
+        upload = person.get("blockchain_upload") or {}
+        if upload.get("status") == "confirmed":
+            print("  Blockchain upload: CONFIRMED")
+            print(f"    Upload transaction: {upload.get('transaction_hash')}")
+            print(f"    Contract address: {upload.get('contract_address')}")
+            print(f"    On-chain post ID: {upload.get('post_id')}")
+            print(f"    Block number: {upload.get('block_number')}")
+            print(f"    Uploaded post hash: {upload.get('post_hash')}")
+        elif upload.get("status") == "failed":
+            print(f"  Blockchain upload: FAILED ({upload.get('error', 'unknown error')})")
         if person.get("blockchain_verification"):
-            print(f"  Blockchain verified: {person['blockchain_verification'].get('verified', False)}")
+            verification = person["blockchain_verification"]
+            verified = bool(verification.get("verified", False) and verification.get("hashes_match", False))
+            print(f"  On-chain stored hash: {verification.get('stored_hash')}")
+            print(f"  Recalculated hash: {verification.get('calculated_hash')}")
+            print(f"  Hashes match: {verification.get('hashes_match', False)}")
+            print(f"  Verification transaction: {verification.get('transaction_hash')}")
+            print(f"  FINAL BLOCKCHAIN RESULT: {'VERIFIED' if verified else 'NOT VERIFIED'}")
     if not result.get("success"):
         print(f"Pipeline stopped at {result.get('failed_stage')}: {result.get('error')}")
     if verbose:

@@ -10,6 +10,11 @@ from typing import Any
 from .hashing import post_hash
 
 
+def _hex_with_prefix(value: Any) -> str:
+    rendered = value.hex() if hasattr(value, "hex") else str(value)
+    return rendered if rendered.startswith("0x") else "0x" + rendered
+
+
 class BlockchainVerifier:
     def __init__(self, contract_address: str | None = None, private_key: str | None = None,
                  rpc_url: str | None = None, abi_path: str | Path | None = None):
@@ -47,7 +52,7 @@ class BlockchainVerifier:
             receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
             return {"success": receipt["status"] == 1, "verified": matches, "post_id": post_id,
                     "stored_hash": stored["post_hash"], "calculated_hash": calculated,
-                    "hashes_match": matches, "transaction_hash": tx_hash.hex()}
+                    "hashes_match": matches, "transaction_hash": _hex_with_prefix(tx_hash)}
         except Exception as exc:
             return {"success": False, "verified": False, "post_id": post_id,
                     "stored_hash": None, "calculated_hash": calculated, "hashes_match": False, "error": str(exc)}

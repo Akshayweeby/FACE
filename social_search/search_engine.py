@@ -32,9 +32,10 @@ class SocialMediaSearchEngine:
         bing_api_key: str | None = None,
         serpapi_api_key: str | None = None,
         face_detector: FaceDetector | None = None,
-        timeout: float = 30.0,
-        max_candidates: int = 20,
+        timeout: float = 15.0,
+        max_candidates: int = 8,
         match_threshold: float | None = None,
+        early_match_threshold: float | None = None,
     ) -> None:
         self.bing_api_key = os.getenv("BING_VISUAL_SEARCH_KEY") if bing_api_key is None else bing_api_key
         self.serpapi_api_key = os.getenv("SERPAPI_KEY") if serpapi_api_key is None else serpapi_api_key
@@ -43,6 +44,9 @@ class SocialMediaSearchEngine:
         self.max_candidates = max_candidates
         configured_threshold = os.getenv("FACE_MATCH_THRESHOLD", "0.55")
         self.match_threshold = float(configured_threshold) if match_threshold is None else match_threshold
+        configured_early_threshold = os.getenv("FACE_EARLY_MATCH_THRESHOLD", "0.90")
+        self.early_match_threshold = (float(configured_early_threshold)
+                                      if early_match_threshold is None else early_match_threshold)
 
     @staticmethod
     def _result(start: float, matches: list[dict[str, Any]], method: str, error: str | None = None) -> dict[str, Any]:
@@ -80,24 +84,41 @@ class SocialMediaSearchEngine:
         return "@" + parts[0].lstrip("@")
 
     @staticmethod
+    def _is_social_url(url: str | None) -> bool:
+        if not url:
+            return False
+        host = urlparse(url).netloc.lower()
+        return any(site in host for site in (
+            "x.com", "twitter.com", "instagram.com", "facebook.com", "linkedin.com",
+            "reddit.com", "youtube.com", "tiktok.com",
+        ))
+
+    @staticmethod
     def _plausible_person_name(name: str | None) -> bool:
         if not name:
             return False
         words = re.findall(r"[A-Za-z][A-Za-z'-]*", name)
         banned = {"award", "championship", "champion", "race", "racing", "team", "formula",
-                  "red", "bull", "embassy", "official", "news", "wikipedia", "instagram", "facebook"}
-        return 2 <= len(words) <= 4 and not any(word.lower() in banned for word in words)
+                  "red", "bull", "embassy", "official", "news", "wikipedia", "instagram", "facebook",
+                  "prime", "minister", "president", "honourable", "honorable", "of", "the", "and",
+                  "for", "on", "in", "to", "a", "an"}
+        normalized = " ".join(word.lower() for word in words)
+        generic_titles = {"prime minister", "president", "prime minister of india"}
+        return 2 <= len(words) <= 4 and normalized not in generic_titles and not any(word.lower() in banned for word in words)
 
     @staticmethod
     def _name_from_identity_page_title(candidate: dict[str, Any]) -> str | None:
         """Read a name only from a strong identity-page title, not a headline."""
         url = candidate.get("url") or ""
         host = urlparse(url).netloc.lower()
-        if "wikipedia.org" not in host:
+        trusted_identity_hosts = ("wikipedia.org", "redbull.com", "formula1.com", "f1.com")
+        if not any(identity_host in host for identity_host in trusted_identity_hosts):
             return None
-        title = (candidate.get("title") or "").split(" - ", 1)[0].split(" | ", 1)[0].strip()
-        if re.fullmatch(r"(?:[A-Z]\.\s*)?[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,2}", title):
-            return title
+        title = candidate.get("title") or ""
+        for separator in (" - ", " | ", ": "):
+            title = title.split(separator, 1)[0].strip()
+            if re.fullmatch(r"(?:[A-Z]\.\s*)?[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,2}", title):
+                return title
         return None
 
     def _enrich_identity(self, candidates: list[dict[str, Any]]) -> bool:
@@ -106,16 +127,40 @@ class SocialMediaSearchEngine:
             if self._plausible_person_name(candidate.get("provider_person_name")):
                 continue
             name = self._name_from_identity_page_title(candidate)
-            if not name:
+            if not name or not self._plausible_person_name(name):
                 continue
             candidate["provider_person_name"] = name
             candidate["identity_source"] = "google_lens_identity_page_title"
             # Candidates are all returned for this face query, so carry the
             # same provider identity to the ranked result if it wins.
             for other in candidates:
-                if not other.get("provider_person_name"):
+                if not self._plausible_person_name(other.get("provider_person_name")):
                     other["provider_person_name"] = name
                     other["identity_source"] = "google_lens_identity_page_title"
+            return True
+        if not self.serpapi_api_key:
+            return False
+        searched_queries: set[str] = set()
+        for candidate in candidates[: self.max_candidates]:
+            if self._plausible_person_name(candidate.get("provider_person_name")):
+                continue
+            query = (candidate.get("title") or "").split("|", 1)[0].strip()
+            if (len(query) < 4 or query.lower() in {"prime minister", "president", "official"}
+                    or query.lower() in searched_queries):
+                continue
+            searched_queries.add(query.lower())
+            try:
+                identity = SerpApiGoogleIdentity(self.serpapi_api_key, self.timeout).search_text(query)
+            except DiscoveryError:
+                continue
+            if not identity or not self._plausible_person_name(identity.get("name")):
+                continue
+            candidate["provider_person_name"] = identity["name"]
+            candidate["identity_source"] = identity.get("source")
+            for other in candidates:
+                if not self._plausible_person_name(other.get("provider_person_name")):
+                    other["provider_person_name"] = identity["name"]
+                    other["identity_source"] = identity.get("source")
             return True
         return False
 
@@ -180,6 +225,7 @@ class SocialMediaSearchEngine:
             if not self._plausible_person_name(provider_name):
                 provider_name = None
             post_handle = self._handle_from_url(candidate.get("url"))
+            is_social = self._is_social_url(candidate.get("url"))
             ranked.append({
                 "url": candidate["url"],
                 "image_url": candidate["image_url"],
@@ -201,9 +247,22 @@ class SocialMediaSearchEngine:
                 "verified_match": True,
                 "person_name": candidate.get("person_name"),
                 "provider_person_name": provider_name,
+                "is_social_source": is_social,
+                "post_type": "social_post_or_profile" if is_social else "web_page",
                 "source": candidate.get("source"),
             })
-        ranked.sort(key=lambda item: item["match_confidence"], reverse=True)
+            # Lens orders candidates by relevance. Once the first strong face
+            # match is found, avoid downloading and encoding the remaining
+            # images serially.
+            if similarity >= self.early_match_threshold and is_social:
+                break
+        social_matches = [item for item in ranked
+                          if item["is_social_source"] and item["match_confidence"] >= max(self.match_threshold, 0.75)]
+        if social_matches:
+            social_ids = {id(item) for item in social_matches}
+            ranked.sort(key=lambda item: (id(item) in social_ids, item["match_confidence"]), reverse=True)
+        else:
+            ranked.sort(key=lambda item: item["match_confidence"], reverse=True)
         for rank, item in enumerate(ranked[:3], start=1):
             item["rank"] = rank
         return ranked[:3]

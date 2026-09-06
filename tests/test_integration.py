@@ -1,4 +1,5 @@
 from main import run_pipeline
+from main import print_terminal_result
 
 
 class FakeDetector:
@@ -52,3 +53,37 @@ def test_pipeline_stops_before_blockchain_when_search_fails():
     result = run_pipeline("input.jpg", detector=FakeDetector(), search_engine=EmptySearch())
     assert result["success"] is False
     assert result["failed_stage"] == "social_search"
+
+
+def test_terminal_report_shows_live_search_and_chain_evidence(capsys):
+    print_terminal_result({
+        "success": True,
+        "people": [{
+            "face_number": 1,
+            "name": "Example Person",
+            "social_media_handle": "@example",
+            "social_media_profile": "https://instagram.com/example",
+            "post_account": "@publisher",
+            "post_url": "https://example.test/post",
+            "match_confidence": 0.99,
+            "match_status": "Verified match",
+            "search_method": "google_lens_serpapi_upload",
+            "search": {"posts_found": 1},
+            "blockchain_upload": {
+                "status": "confirmed", "transaction_hash": "0xupload",
+                "contract_address": "0xcontract", "post_id": 1,
+                "block_number": 2, "post_hash": "0xhash",
+            },
+            "blockchain_verification": {
+                "verified": True, "hashes_match": True,
+                "stored_hash": "0xhash", "calculated_hash": "0xhash",
+                "transaction_hash": "0xverify",
+            },
+        }],
+    })
+    output = capsys.readouterr().out
+    assert "Live provider search: YES" in output
+    assert "Upload transaction: 0xupload" in output
+    assert "Uploaded post hash: 0xhash" in output
+    assert "Recalculated hash: 0xhash" in output
+    assert "FINAL BLOCKCHAIN RESULT: VERIFIED" in output

@@ -10,6 +10,11 @@ from typing import Any
 from .hashing import post_hash
 
 
+def _hex_with_prefix(value: Any) -> str:
+    rendered = value.hex() if hasattr(value, "hex") else str(value)
+    return rendered if rendered.startswith("0x") else "0x" + rendered
+
+
 class BlockchainUploader:
     def __init__(self, contract_address: str | None = None, private_key: str | None = None,
                  rpc_url: str | None = None, abi_path: str | Path | None = None):
@@ -47,7 +52,7 @@ class BlockchainUploader:
             post_id = int(events[0]["args"]["postId"]) if events else None
             if post_id is None:
                 raise RuntimeError("Upload transaction emitted no PostUploaded event")
-            return {"success": receipt["status"] == 1, "transaction_hash": tx_hash.hex(),
+            return {"success": receipt["status"] == 1, "transaction_hash": _hex_with_prefix(tx_hash),
                     "contract_address": self.contract.address, "post_id": post_id,
                     "block_number": receipt["blockNumber"], "status": "confirmed" if receipt["status"] == 1 else "failed",
                     "post_hash": digest}

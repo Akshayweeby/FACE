@@ -36,6 +36,8 @@ Provider access, robots rules, authentication, rate limits, and result coverage 
 
 `result["matches"][0]` is a provider-derived candidate with `rank`, `url`, `image_url`, `caption`, `timestamp`, `user`, `match_confidence`, and `face_confidence`. `success` is false when the provider fails, no credentials are configured, the input face is invalid, or no candidate image can be locally verified. `mock_candidates` exists only for tests/development and is never used unless explicitly passed.
 
+The terminal demo prints `Live provider search: YES`, the provider candidate count, the retrieved post URL, and (when found by a separate provider query) the subject profile URL. Generic web pages are ranked below sufficiently strong social posts/profiles.
+
 ## Demo/testing
 
 For an end-to-end demo, use a known public-figure image that you have permission to process, configure one provider key, and run `find_posts(image_path=...)`. Integration tests should record provider responses rather than commit personal images or API keys. Unit tests use mocked provider responses and candidate downloads, so normal test execution does not make external requests.

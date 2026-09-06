@@ -221,16 +221,16 @@ class SerpApiGoogleIdentity:
 
         for item in payload.get("organic_results", [])[:5]:
             patterns = (
-                r"(?:prime minister|pm)\s+(?:shri\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})",
-                r"\bShri\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})",
+                r"(?i:(?:prime minister|pm))\s+(?i:shri\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})",
+                r"\b(?i:Shri)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})",
             )
             for text in (item.get("title", ""), item.get("snippet", "")):
                 for pattern in patterns:
-                    match = re.search(pattern, text, flags=re.IGNORECASE)
+                    match = re.search(pattern, text)
                     if not match:
                         continue
                     words = [word for word in match.group(1).split()
-                             if word.lower() not in {"shri", "ji", "today", "on"}]
+                             if word.lower() not in {"shri", "ji", "today", "on", "of", "the", "and", "for", "in", "to"}]
                     if len(words) >= 2:
                         return {"name": " ".join(words), "url": item.get("link"), "source": "google_search"}
         return None

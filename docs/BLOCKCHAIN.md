@@ -39,6 +39,10 @@ Install Python dependencies with `pip install -r blockchain/requirements.txt`. U
 
 The contract emits `PostUploaded` and `PostVerified`. It stores the post ID, hash, original post URL/timestamp, uploader, blockchain upload timestamp, and latest verification state. It does not store the full caption or image, which keeps the chain record compact and avoids putting unnecessary personal data on-chain.
 
+## Screen-recording evidence
+
+Run the Hardhat node and deploy the contract before starting the Python pipeline. The terminal report displays the live search method, retrieved post/profile, upload transaction, contract address, on-chain post ID, block number, uploaded hash, stored hash, recalculated hash, verification transaction, and `FINAL BLOCKCHAIN RESULT: VERIFIED`.
+
 ## Sepolia
 
 Set `SEPOLIA_RPC_URL`, `PRIVATE_KEY`, and `CONTRACT_ADDRESS` only through environment variables, then deploy with `npx hardhat run scripts/deploy.js --network sepolia`. A real contract address and transaction hash can only be documented after deployment with a funded testnet wallet; no fake address or transaction is included here.
