@@ -1,8 +1,39 @@
-# Hacker House Goa Task 3 — Face-to-Web Verification Pipeline
+<div align="center">
 
-This project is a terminal-based pipeline that accepts a JPG/PNG image, detects faces, creates CPU-compatible face embeddings, performs genuine live web and social discovery, compares faces locally, retrieves the strongest public post/profile candidates, and records the selected post fingerprint on a local Hardhat blockchain. The final stage recalculates the fingerprint and verifies it against the on-chain record.
+# 🔎 Hacker House Goa Task 3
 
-## Technologies used
+### Face → Live Web Discovery → Blockchain Verification
+
+<p><strong>A terminal-first identity discovery and tamper-evident verification pipeline for publicly indexed images.</strong></p>
+
+<p>
+  <a href="#quick-start">🚀 Quick Start</a> ·
+  <a href="#architecture">🏗️ Architecture</a> ·
+  <a href="#live-search-guarantee">🌐 Live Search</a> ·
+  <a href="#blockchain-verification-details">⛓️ Blockchain</a>
+</p>
+<p>
+  <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/OpenCV-YuNet%20%2B%20SFace-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white" alt="OpenCV">
+  <img src="https://img.shields.io/badge/SerpApi-Live%20Google%20Lens-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="SerpApi">
+  <img src="https://img.shields.io/badge/Solidity-0.8.20-363636?style=for-the-badge&logo=solidity&logoColor=white" alt="Solidity">
+  <img src="https://img.shields.io/badge/Hardhat-Local%20Chain-FFF100?style=for-the-badge&logo=ethereum&logoColor=black" alt="Hardhat">
+  <img src="https://img.shields.io/badge/Tests-Pytest-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white" alt="Pytest">
+</p>
+
+</div>
+
+<hr>
+
+## ✨ Overview
+
+This project turns an input JPG/PNG image into a structured, evidence-oriented result. It detects faces, creates CPU-compatible embeddings, performs genuine live reverse-image discovery, retrieves public post/profile candidates, verifies candidate faces locally, and records the selected post fingerprint on a local Hardhat blockchain. The final stage recalculates the fingerprint and proves whether the on-chain record still matches.
+
+> **Pipeline:** `IMAGE → FACE EMBEDDING → LIVE SEARCH → MATCHED POST/PROFILE → SHA-256 → BLOCKCHAIN → VERIFIED`
+
+The system does not train a model from scratch. Face detection and embeddings use pretrained OpenCV models and run on the CPU.
+
+## 🧰 Technology stack
 
 - **Python 3.10+** — application orchestration and integration.
 - **OpenCV YuNet** — CPU-compatible face detection.
@@ -19,7 +50,7 @@ This project is a terminal-based pipeline that accepts a JPG/PNG image, detects 
 
 The project does not train a model from scratch. Face detection and embeddings use pretrained OpenCV models and run on the CPU.
 
-## Architecture
+## 🏗️ Architecture
 
 ```text
                     ┌──────────────────────────┐
@@ -105,7 +136,7 @@ Face Detection/
 10. The hash, URL, and timestamp are uploaded to `PostVerification.sol`.
 11. The same post object is hashed again, compared with the on-chain hash, and submitted to the contract for verification.
 
-## Installation
+## 🚀 Quick start
 
 From the project root:
 
@@ -269,11 +300,27 @@ npm.cmd test
 - Local Hardhat is for development and demonstration. A testnet deployment requires a funded wallet, RPC endpoint, and separate environment configuration.
 - Do not process images or publish results without appropriate permission and compliance with applicable privacy, biometric, and platform rules.
 
-## Creators
+<div align="center">
 
-| Creator | Email |
-|---|---|
-| **Akshay V B** | [aksh.techie@gmail.com](mailto:aksh.techie@gmail.com) |
-| **Shraddha K** | [shraddhakurakuri24@gmail.com](mailto:shraddhakurakuri24@gmail.com) |
-| **Aditya Vikram** | [1dt24cy003@dsatm.edu.in](mailto:1dt24cy003@dsatm.edu.in) |
+## 👥 Creators
 
+<table>
+  <tr>
+    <th>Creator</th>
+    <th>Email</th>
+  </tr>
+  <tr>
+    <td><strong>Akshay V B</strong></td>
+    <td><a href="mailto:aksh.techie@gmail.com">aksh.techie@gmail.com</a></td>
+  </tr>
+  <tr>
+    <td><strong>Shraddha K</strong></td>
+    <td><a href="mailto:shraddhakurakuri24@gmail.com">shraddhakurakuri24@gmail.com</a></td>
+  </tr>
+  <tr>
+    <td><strong>Aditya Vikram</strong></td>
+    <td><a href="mailto:1dt24cy003@dsatm.edu.in">1dt24cy003@dsatm.edu.in</a></td>
+  </tr>
+</table>
+
+</div>
